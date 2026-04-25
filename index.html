@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Brawl Stars HTML5 - Brawler Select</title>
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #1a1a1a; font-family: 'Arial Black', sans-serif; }
+        canvas { display: none; } /* Скрыт до старта */
+        #menu { 
+            display: flex; flex-direction: column; align-items: center; justify-content: center; 
+            height: 100vh; background: linear-gradient(135deg, #1e3c72, #2a5298); color: white;
+        }
+        .brawler-list { display: flex; gap: 20px; margin-top: 30px; }
+        .card { 
+            width: 150px; padding: 20px; background: rgba(0,0,0,0.4); border: 4px solid #fff; 
+            border-radius: 15px; cursor: pointer; transition: 0.3s; text-align: center;
+        }
+        .card:hover { transform: scale(1.1); background: #f1c40f; color: #000; }
+        #ui { 
+            position: absolute; top: 20px; left: 20px; color: white; 
+            pointer-events: none; z-index: 10; display: none;
+        }
+        #super-bar { 
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            width: 300px; height: 25px; background: rgba(0,0,0,0.6); 
+            border: 3px solid #fff; border-radius: 15px; display: none; overflow: hidden;
+        }
+        #super-fill { width: 0%; height: 100%; background: #f1c40f; }
+    </style>
+</head>
+<body>
+
+    <!-- Меню выбора -->
+    <div id="menu">
+        <h1>ВЫБЕРИ БОЙЦА</h1>
+        <div class="brawler-list">
+            <div class="card" onclick="startGame('colt')">
+                <h3>COLT</h3>
+                <p>Дальность: ⭐⭐⭐<br>ХП: ⭐</p>
+            </div>
+            <div class="card" onclick="startGame('shelly')">
+                <h3>SHELLY</h3>
+                <p>Дальность: ⭐⭐<br>ХП: ⭐⭐</p>
+            </div>
+            <div class="card" onclick="startGame('el_primo')">
+                <h3>EL PRIMO</h3>
+                <p>Дальность: ⭐<br>ХП: ⭐⭐⭐</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Интерфейс игры -->
+    <div id="ui"><div style="font-size: 30px;">SCORE: <span id="score">0</span></div></div>
+    <div id="super-bar"><div id="super-fill"></div></div>
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+
+let score = 0;
+let isGameOver = false;
+let gameStarted = false;
+let superCharge = 0;
+
+const player = { x: 0, y: 0, speed: 5, color: '#3498db', hp: 100, maxHp: 100, range: 60, invul: 0, brawler: '' };
+const bullets = [];
+const enemies = [];
+const keys = {};
+
+// Характеристики персонажей
+const BRAWLERS = {
+    colt: { color: '#3498db', hp: 80, speed: 6, range: 80, bulletSpeed: 22 },
+    shelly: { color: '#9b59b6', hp: 120, speed: 5, range: 50, bulletSpeed: 18 },
+    el_primo: { color: '#e67e22', hp: 250, speed: 4, range: 15, bulletSpeed: 10 }
+};
+
+function startGame(type) {
+    const stats = BRAWLERS[type];
+    player.brawler = type;
+    player.color = stats.color;
+    player.hp = stats.hp;
+    player.maxHp = stats.hp;
+    player.speed = stats.speed;
+    player.range = stats.range;
+    
+    document.getElementById('menu').style.display = 'none';
+    canvas.style.display = 'block';
+    document.getElementById('ui').style.display = 'block';
+    document.getElementById('super-bar').style.display = 'block';
+    
+    gameStarted = true;
+    resize();
+    requestAnimationFrame(draw);
+}
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    player.x = canvas.width/2; player.y = canvas.height/2;
+}
+
+window.addEventListener('resize', resize);
+window.addEventListener('keydown', e => {
+    keys[e.code] = true;
+    if(e.code === 'Space' && superCharge >= 100) useSuper();
+});
+window.addEventListener('keyup', e => keys[e.code] = false);
+
+window.addEventListener('mousedown', e => {
+    if(!gameStarted || isGameOver) return;
+    const angle = Math.atan2(e.clientY - player.y, e.clientX - player.x);
+    
+    // Обычная атака
+    if(player.brawler === 'shelly') { // Дробь
+        for(let i=-0.2; i<=0.2; i+=0.2) fire(angle + i);
+    } else {
+        fire(angle);
+    }
+});
+
+function fire(angle, isSuper = false) {
+    const speed = BRAWLERS[player.brawler].bulletSpeed;
+    bullets.push({ 
+        x: player.x, y: player.y, 
+        vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed, 
+        life: player.range, isSuper: isSuper 
+    });
+}
+
+function useSuper() {
+    superCharge = 0;
+    document.getElementById('super-fill').style.width = '0%';
+    for(let i=0; i<15; i++) fire((Math.PI*2/15)*i, true);
+}
+
+function update() {
+    if (isGameOver) return;
+
+    if (keys['KeyW']) player.y -= player.speed;
+    if (keys['KeyS']) player.y += player.speed;
+    if (keys['KeyA']) player.x -= player.speed;
+    if (keys['KeyD']) player.x += player.speed;
+    
+    if(player.invul > 0) player.invul--;
+
+    bullets.forEach((b, i) => {
+        b.x += b.vx; b.y += b.vy; b.life--;
+        if(b.life <= 0) bullets.splice(i, 1);
+        enemies.forEach((en, ei) => {
+            if(Math.hypot(b.x - en.x, b.y - en.y) < 30) {
+                en.hp -= 40; bullets.splice(i, 1);
+                if(superCharge < 100) {
+                    superCharge += 10;
+                    document.getElementById('super-fill').style.width = superCharge + '%';
+                }
+                if(en.hp <= 0) { enemies.splice(ei, 1); score += 100; scoreEl.innerText = score; }
+            }
+        });
+    });
+
+    enemies.forEach((en) => {
+        const dist = Math.hypot(player.x - en.x, player.y - en.y);
+        const angle = Math.atan2(player.y - en.y, player.x - en.x);
+        en.x += Math.cos(angle) * 2.5;
+        en.y += Math.sin(angle) * 2.5;
+
+        if (dist < 40 && player.invul <= 0) {
+            player.hp -= 20; player.invul = 40;
+            if(player.hp <= 0) isGameOver = true;
+        }
+    });
+
+    if(enemies.length < 5) enemies.push({ x: Math.random()*canvas.width, y: -50, hp: 100 });
+}
+
+function draw() {
+    ctx.fillStyle = '#4c943c'; ctx.fillRect(0,0, canvas.width, canvas.height);
+    
+    // Отрисовка игрока
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    if(player.invul > 0 && Math.floor(Date.now()/50)%2) ctx.globalAlpha = 0.3;
+    ctx.fillStyle = player.color; ctx.strokeStyle = '#000'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.roundRect(-20, -20, 40, 40, 10); ctx.fill(); ctx.stroke();
+    // Полоска здоровья над игроком
+    ctx.fillStyle = 'red'; ctx.fillRect(-20, -35, 40, 5);
+    ctx.fillStyle = 'lime'; ctx.fillRect(-20, -35, 40 * (player.hp/player.maxHp), 5);
+    ctx.restore();
+
+    bullets.forEach(b => {
+        ctx.fillStyle = b.isSuper ? '#f1c40f' : '#fff';
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.isSuper ? 10 : 6, 0, Math.PI*2); ctx.fill();
+    });
+
+    enemies.forEach(en => {
+        ctx.fillStyle = '#e91e63'; ctx.beginPath(); 
+        ctx.roundRect(en.x-20, en.y-20, 40, 40, 10); ctx.fill(); ctx.stroke();
+    });
+
+    if(!isGameOver) update();
+    else {
+        ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle = '#fff'; ctx.textAlign='center'; ctx.font='50px Arial';
+        ctx.fillText('ИГРА ОКОНЧЕНА', canvas.width/2, canvas.height/2);
+    }
+    requestAnimationFrame(draw);
+}
+</script>
+</body>
+</html>
